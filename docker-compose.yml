@@ -1,0 +1,31 @@
+services:
+  postgres-db:
+    image: postgres:latest
+    container_name: postgres-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: currency_converter_db
+      POSTGRES_PORT: 5432
+    ports:
+      - "5432:5432"
+    expose:
+      - "5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+
+  currency-converter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-db:5432/currency_converter_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres-db
+
+volumes:
+  pg-data:
