@@ -6,6 +6,7 @@ import com.uzum.currencyconverter.dto.CommissionDTO;
 import com.uzum.currencyconverter.dto.ConversionDTO;
 import com.uzum.currencyconverter.dto.CurrencyDTO;
 import com.uzum.currencyconverter.dto.RateDTO;
+import com.uzum.currencyconverter.entity.Account;
 import com.uzum.currencyconverter.entity.Commission;
 import com.uzum.currencyconverter.exception.InvalidPairException;
 import com.uzum.currencyconverter.exception.NotFoundException;
@@ -14,6 +15,7 @@ import com.uzum.currencyconverter.mapper.CommissionDTOMapper;
 import com.uzum.currencyconverter.repository.AccountRepository;
 import com.uzum.currencyconverter.repository.CommissionRepository;
 import com.uzum.currencyconverter.repository.SecurityKeyRepository;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -23,14 +25,18 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.text.DecimalFormat;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
 @Service
+@Slf4j
 public class ApplicationServiceImpl implements ApplicationService {
     private static final String DECIMAL_PATTERN = "#.######";
     private static final String API_BASE_URL = "https://cbu.uz/ru/arkhiv-kursov-valyut/json/";
+    private static final DecimalFormat DECIMAL_FORMATTER = new DecimalFormat(DECIMAL_PATTERN);
+
 
     private final AccountRepository accountRepository;
     private final CommissionRepository commissionRepository;
@@ -98,7 +104,9 @@ public class ApplicationServiceImpl implements ApplicationService {
             }.getType();
             List<CurrencyDTO> currenciesList = gson.fromJson(response.body(), currencyListType);
 
-            BigDecimal rate = getRateForCurrencyPair(currencies[0], currencies[1], currenciesList);
+            String rateString = getRateForCurrencyPair(currencies[0], currencies[1], currenciesList);
+            double rateDouble = Double.parseDouble(rateString);
+            BigDecimal rate = BigDecimal.valueOf(rateDouble);
 
             return new RateDTO(currencies[0], currencies[1], rate, LocalDate.parse(date));
 
@@ -109,7 +117,44 @@ public class ApplicationServiceImpl implements ApplicationService {
 
     @Override
     public ConversionDTO performConversion(ConversionDTO conversionDTO) {
-        return null;
+        Optional<Account> fromAccountOptional = accountRepository.getAccountByCurrencyName(conversionDTO.from());
+        Optional<Account> toAccountOptional = accountRepository.getAccountByCurrencyName(conversionDTO.to());
+
+        if (fromAccountOptional.isEmpty())
+            throw new NotFoundException("From account does not exists!");
+
+        if (toAccountOptional.isEmpty())
+            throw new NotFoundException("To account does not exists!");
+
+        Account fromAccount = fromAccountOptional.get();
+        Account toAccount = toAccountOptional.get();
+
+
+        Commission commission = getCommission(conversionDTO.from(), conversionDTO.to());
+
+        double moneyToTransfer = conversionDTO.amount() * (100 - commission.getCommissionAmount()) / 100;
+        log.info(String.valueOf(moneyToTransfer));
+
+        if (fromAccount.getAmount() >= moneyToTransfer) {
+
+            fromAccount.setAmount(fromAccount.getAmount() - moneyToTransfer);
+            accountRepository.save(fromAccount);
+
+            double amountToAddToAccount = toAccount.getAmount() + (conversionDTO.amount() * commission.getConversionRate());
+            toAccount.setAmount(amountToAddToAccount);
+            accountRepository.save(toAccount);
+
+            return new ConversionDTO(conversionDTO.from(), conversionDTO.to(), amountToAddToAccount);
+        } else {
+            // Throw an exception or handle the insufficient funds scenario as needed
+            // throw new InsufficientFundsException("Insufficient funds in the account for conversion.");
+            log.warn("NOt found");
+            return null;
+        }
+    }
+
+    private Commission getCommission(String from, String to) {
+        return commissionRepository.getCommissionByFromCurrencyAndToCurrency(from, to).orElseThrow(() -> new NotFoundException("Commission not found for the specified currencies"));
     }
 
     @Override
@@ -131,15 +176,14 @@ public class ApplicationServiceImpl implements ApplicationService {
         return API_BASE_URL + currency + "/" + date + "/";
     }
 
-    private BigDecimal getRateForCurrencyPair(String from, String to, List<CurrencyDTO> currenciesList) {
-//        DecimalFormat decimalFormat = new DecimalFormat(DECIMAL_PATTERN);
+    private String getRateForCurrencyPair(String from, String to, List<CurrencyDTO> currenciesList) {
 
         if (from.equals("UZS"))
-            return BigDecimal.valueOf(1.0 / Double.parseDouble(currenciesList.get(0).Rate()));
+            return DECIMAL_FORMATTER.format(BigDecimal.valueOf(1.0 / Double.parseDouble(currenciesList.get(0).Rate())));
         else if (to.equals("UZS"))
-            return BigDecimal.valueOf(Double.parseDouble(currenciesList.get(0).Rate()));
+            return DECIMAL_FORMATTER.format(BigDecimal.valueOf(Double.parseDouble(currenciesList.get(0).Rate())));
         else
-            return BigDecimal.valueOf(Double.parseDouble(currenciesList.get(0).Rate()));
+            return DECIMAL_FORMATTER.format(BigDecimal.valueOf(Double.parseDouble(currenciesList.get(0).Rate())));
     }
 
     private Double calculate(Commission commission, Double amount) {
