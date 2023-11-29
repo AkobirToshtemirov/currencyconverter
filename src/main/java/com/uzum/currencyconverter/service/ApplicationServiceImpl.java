@@ -10,6 +10,7 @@ import com.uzum.currencyconverter.entity.Commission;
 import com.uzum.currencyconverter.exception.InvalidPairException;
 import com.uzum.currencyconverter.exception.NotFoundException;
 import com.uzum.currencyconverter.exception.OfficialRateFetchException;
+import com.uzum.currencyconverter.mapper.CommissionDTOMapper;
 import com.uzum.currencyconverter.repository.AccountRepository;
 import com.uzum.currencyconverter.repository.CommissionRepository;
 import com.uzum.currencyconverter.repository.SecurityKeyRepository;
@@ -34,11 +35,13 @@ public class ApplicationServiceImpl implements ApplicationService {
     private final AccountRepository accountRepository;
     private final CommissionRepository commissionRepository;
     private final SecurityKeyRepository securityKeyRepository;
+    private final CommissionDTOMapper commissionDTOMapper;
 
-    public ApplicationServiceImpl(AccountRepository accountRepository, CommissionRepository commissionRepository, SecurityKeyRepository securityKeyRepository) {
+    public ApplicationServiceImpl(AccountRepository accountRepository, CommissionRepository commissionRepository, SecurityKeyRepository securityKeyRepository, CommissionDTOMapper commissionDTOMapper) {
         this.accountRepository = accountRepository;
         this.commissionRepository = commissionRepository;
         this.securityKeyRepository = securityKeyRepository;
+        this.commissionDTOMapper = commissionDTOMapper;
     }
 
     @Override
@@ -111,7 +114,17 @@ public class ApplicationServiceImpl implements ApplicationService {
 
     @Override
     public CommissionDTO setCommission(String secretKey, CommissionDTO commissionDTO) {
-        return null;
+        if (!secretKey.equals(securityKeyRepository.getSecretKey()))
+            throw new SecurityException("Security key is not equal!");
+
+        Optional<Commission> commissionOptional = commissionRepository.getCommissionByFromCurrencyAndToCurrency(commissionDTO.from(), commissionDTO.to());
+        if (commissionOptional.isEmpty())
+            throw new NotFoundException("This pair does not exist!");
+
+        Commission commission = commissionOptional.get();
+        commission.setCommissionAmount(commissionDTO.commissionAmount());
+
+        return commissionDTOMapper.apply(commissionRepository.save(commission));
     }
 
     private String buildApiUrl(String currency, String date) {
