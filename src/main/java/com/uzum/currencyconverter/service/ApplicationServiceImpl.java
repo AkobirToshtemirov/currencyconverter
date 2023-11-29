@@ -2,6 +2,7 @@ package com.uzum.currencyconverter.service;
 
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
+import com.uzum.currencyconverter.dto.CommissionDTO;
 import com.uzum.currencyconverter.dto.ConversionDTO;
 import com.uzum.currencyconverter.dto.CurrencyDTO;
 import com.uzum.currencyconverter.dto.RateDTO;
@@ -22,7 +23,6 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.LocalDate;
-import java.util.Currency;
 import java.util.List;
 import java.util.Optional;
 
@@ -91,7 +91,7 @@ public class ApplicationServiceImpl implements ApplicationService {
                 throw new OfficialRateFetchException("Failed to fetch official exchange rate. HTTP Status Code: " + response.statusCode());
 
             Gson gson = new Gson();
-            Type currencyListType = new TypeToken<List<Currency>>() {
+            Type currencyListType = new TypeToken<List<CurrencyDTO>>() {
             }.getType();
             List<CurrencyDTO> currenciesList = gson.fromJson(response.body(), currencyListType);
 
@@ -104,16 +104,26 @@ public class ApplicationServiceImpl implements ApplicationService {
         }
     }
 
+    @Override
+    public ConversionDTO performConversion(ConversionDTO conversionDTO) {
+        return null;
+    }
+
+    @Override
+    public CommissionDTO setCommission(String secretKey, CommissionDTO commissionDTO) {
+        return null;
+    }
+
     private String buildApiUrl(String currency, String date) {
         return API_BASE_URL + currency + "/" + date + "/";
     }
 
-    private BigDecimal getRateForCurrencyPair(String fromCurrency, String toCurrency, List<CurrencyDTO> currenciesList) {
+    private BigDecimal getRateForCurrencyPair(String from, String to, List<CurrencyDTO> currenciesList) {
 //        DecimalFormat decimalFormat = new DecimalFormat(DECIMAL_PATTERN);
 
-        if (fromCurrency.equals("UZS"))
+        if (from.equals("UZS"))
             return BigDecimal.valueOf(1.0 / Double.parseDouble(currenciesList.get(0).Rate()));
-        else if (toCurrency.equals("UZS"))
+        else if (to.equals("UZS"))
             return BigDecimal.valueOf(Double.parseDouble(currenciesList.get(0).Rate()));
         else
             return BigDecimal.valueOf(Double.parseDouble(currenciesList.get(0).Rate()));
@@ -122,5 +132,4 @@ public class ApplicationServiceImpl implements ApplicationService {
     private Double calculate(Commission commission, Double amount) {
         return (((100 - commission.getCommissionAmount()) * amount) / 100) * commission.getConversionRate();
     }
-
 }

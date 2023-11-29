@@ -26,4 +26,11 @@ public class Commission {
 
     @Column(name = "conversion_rate", nullable = false)
     private Double conversionRate;
+
+    public Commission(String fromCurrency, String toCurrency, Float commissionAmount, Double conversionRate) {
+        this.fromCurrency = fromCurrency;
+        this.toCurrency = toCurrency;
+        this.commissionAmount = commissionAmount;
+        this.conversionRate = conversionRate;
+    }
 }
