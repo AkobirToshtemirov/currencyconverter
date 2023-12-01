@@ -1,8 +1,8 @@
 spring:
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/currency_converter_db}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://postgres-db:5432/currency_converter_db}
     username: ${SPRING_DATASOURCE_USERNAME:postgres}
-    password: ${SPRING_DATASOURCE_PASSWORD:dev3469}
+    password: ${SPRING_DATASOURCE_PASSWORD:postgres}
 
   jpa:
     database-platform: org.hibernate.dialect.PostgreSQLDialect

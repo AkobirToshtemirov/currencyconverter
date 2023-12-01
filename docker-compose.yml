@@ -1,12 +1,24 @@
 services:
+  pgadmin:
+    image: dpage/pgadmin4
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@gmail.com
+      - PGADMIN_DEFAULT_PASSWORD=root
+      - PGADMIN_LISTEN_PORT=5454
+    ports:
+      - "5454:5454/tcp"
+    depends_on:
+      - postgres-db
+
   postgres-db:
     image: postgres:latest
-    restart: 'always'
+    restart: always
     container_name: postgres-db
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=currency_converter_db
+      - POSTGRES_PORT=5432
     ports:
       - "5432:5432"
     volumes:
@@ -21,11 +33,11 @@ services:
       - SPRING_DATASOURCE_USERNAME=postgres
       - SPRING_DATASOURCE_PASSWORD=postgres
     depends_on:
-      - 'postgres-db'
-    restart: 'always'
-    container_name: 'app'
+      - postgres-db
+    restart: always
+    container_name: app
     ports:
-      - '8080:8080'
+      - "8080:8080"
 
 volumes:
   pg-data:
