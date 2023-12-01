@@ -1,4 +1,4 @@
-# Uzum IT Academy | Final Project | Currency Converter
+# Currency Converter
 
 **Task description:**
  - Write a currency converter program. The converter must translate the currency taking into account the current exchange rate (for the day) and the agent commission.
