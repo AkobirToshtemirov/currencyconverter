@@ -21,7 +21,7 @@
 
 **Instructions to run the project:**
 
-First get the project to you device(laptop, desktop) using this git command(make sure git is installled to your device):
+First get the project to your device using this git command(make sure git is installled to your device):
 ```bash
 git clone https://github.com/AkobirToshtemirov/currencyconverter.git
 ```
