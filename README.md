@@ -49,7 +49,7 @@ docker-compose up --build
     - If there is not enough money to issue, the conversion is not performed and an error message is returned in JSON format and code 403.
     - If such currency does not exist, returns error message in JSON format with the status code 404.
 
- - ***POST*** | *http://localhost:8080/api/v1/app/setcommission* **|** Headers add => {"secret-key": "jkhkjh132@lkjjkJk@89jghAj"} **|** Body => {"from":"USD","to":"UZS", "commissionAmount": 0.055}
+ - ***POST*** | *http://localhost:8080/api/v1/app/setcomission* **|** Headers add => {"secret-key": "jkhkjh132@lkjjkJk@89jghAj"} **|** Body => {"from":"USD","to":"UZS", "commissionAmount": 0.055}
     - New commission amount is set to currency pair.
     - If the pair does not exist, returns error message in JSON format with the status code 404.
     - The method must check for the presence of a secret key in the header. If the key does not match the secret key, returns error message in JSON format with the status code 403.
