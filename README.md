@@ -54,5 +54,6 @@ docker-compose up --build
     - If the pair does not exist, returns error message in JSON format with the status code 404.
     - The method must check for the presence of a secret key in the header. If the key does not match the secret key, returns error message in JSON format with the status code 403.
 
-    
+**Technologies:**
+ - Java, Spring Boot, Spring Data JPA, Project Lombok, PostgreSQL, Docker
 
