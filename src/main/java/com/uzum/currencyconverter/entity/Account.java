@@ -3,6 +3,8 @@ package com.uzum.currencyconverter.entity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
+
 @Entity
 @Getter
 @Setter
@@ -18,6 +20,6 @@ public class Account {
     @Column(name = "currency_name", nullable = false)
     private String currencyName;
 
-    @Column(nullable = false)
-    private Double amount;
+    @Column(nullable = false, precision = 38, scale = 6)
+    private BigDecimal amount;
 }

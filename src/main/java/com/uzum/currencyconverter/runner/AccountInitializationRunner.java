@@ -1,6 +1,6 @@
 package com.uzum.currencyconverter.runner;
 
-import com.uzum.currencyconverter.service.AccountService;
+import com.uzum.currencyconverter.service.api.AccountService;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;

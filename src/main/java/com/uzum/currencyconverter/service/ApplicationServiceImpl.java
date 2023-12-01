@@ -2,19 +2,17 @@ package com.uzum.currencyconverter.service;
 
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
-import com.uzum.currencyconverter.dto.CommissionDTO;
 import com.uzum.currencyconverter.dto.ConversionDTO;
 import com.uzum.currencyconverter.dto.CurrencyDTO;
 import com.uzum.currencyconverter.dto.RateDTO;
 import com.uzum.currencyconverter.entity.Account;
 import com.uzum.currencyconverter.entity.Commission;
-import com.uzum.currencyconverter.exception.InvalidPairException;
+import com.uzum.currencyconverter.exception.NotEnoughMoneyException;
 import com.uzum.currencyconverter.exception.NotFoundException;
 import com.uzum.currencyconverter.exception.OfficialRateFetchException;
-import com.uzum.currencyconverter.mapper.CommissionDTOMapper;
 import com.uzum.currencyconverter.repository.AccountRepository;
 import com.uzum.currencyconverter.repository.CommissionRepository;
-import com.uzum.currencyconverter.repository.SecurityKeyRepository;
+import com.uzum.currencyconverter.service.api.ApplicationService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -28,165 +26,168 @@ import java.net.http.HttpResponse;
 import java.text.DecimalFormat;
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Optional;
 
 @Service
 @Slf4j
 public class ApplicationServiceImpl implements ApplicationService {
-    private static final String DECIMAL_PATTERN = "#.######";
     private static final String API_BASE_URL = "https://cbu.uz/ru/arkhiv-kursov-valyut/json/";
+    private static final String DECIMAL_PATTERN = "#.######";
     private static final DecimalFormat DECIMAL_FORMATTER = new DecimalFormat(DECIMAL_PATTERN);
+    private static final String UZS = "UZS";
 
 
     private final AccountRepository accountRepository;
     private final CommissionRepository commissionRepository;
-    private final SecurityKeyRepository securityKeyRepository;
-    private final CommissionDTOMapper commissionDTOMapper;
 
-    public ApplicationServiceImpl(AccountRepository accountRepository, CommissionRepository commissionRepository, SecurityKeyRepository securityKeyRepository, CommissionDTOMapper commissionDTOMapper) {
+    public ApplicationServiceImpl(AccountRepository accountRepository, CommissionRepository commissionRepository) {
         this.accountRepository = accountRepository;
         this.commissionRepository = commissionRepository;
-        this.securityKeyRepository = securityKeyRepository;
-        this.commissionDTOMapper = commissionDTOMapper;
     }
 
     @Override
     public ConversionDTO getConversion(String from, String to, Double amount) {
-        Double resultAmount;
-        if (from.equals(to))
-            throw new InvalidPairException("Conversion between same currency is not allowed!");
-
-        if (from.equals("UZS") || to.equals("UZS")) {
-            Optional<Commission> commission = commissionRepository.getCommissionByFromCurrencyAndToCurrency(from, to);
-            if (commission.isEmpty())
-                throw new NotFoundException("This pair does not exists!");
-
-            resultAmount = calculate(commission.get(), amount);
+        Double result;
+        if (from.equals(UZS) || to.equals(UZS)) {
+            result = calculateCommission(getCommission(from, to), amount);
         } else {
-            Optional<Commission> commission = commissionRepository.getCommissionByFromCurrencyAndToCurrency(from, "UZS");
-            if (commission.isEmpty())
-                throw new NotFoundException("This pair does not exists!");
-
-            resultAmount = calculate(commission.get(), amount);
-            commission = commissionRepository.getCommissionByFromCurrencyAndToCurrency("UZS", to);
-            if (commission.isEmpty())
-                throw new NotFoundException("This pair does not exists!");
-
-            resultAmount = calculate(commission.get(), resultAmount);
+            result = calculateCommission(getCommission(from, UZS), amount);
+            result = calculateCommission(getCommission(UZS, to), result);
         }
 
-        return new ConversionDTO(from, to, resultAmount);
+        return new ConversionDTO(from, to, DECIMAL_FORMATTER.format(result));
     }
 
     @Override
     public RateDTO getOfficialRate(String date, String pair) {
         String[] currencies = pair.split("/");
 
-        if (currencies.length != 2)
-            throw new InvalidPairException("Pair is invalid!");
+        if (!UZS.equals(currencies[0]) && !UZS.equals(currencies[1])) {
+            Commission commissionToUZS = getCommission(currencies[0], UZS);
+            Commission commissionFromUZS = getCommission(UZS, currencies[1]);
 
-        if (!currencies[0].equals("UZS") && !currencies[1].equals("UZS")) {
-            // UZS is not included
-            return null;
+            Double rateToUZS = calculateCommission(commissionToUZS, 1.0);
+            Double finalRate = calculateCommission(commissionFromUZS, rateToUZS);
+
+            return createRateDTO(currencies[0], currencies[1], date, finalRate);
         }
 
         try {
-            String apiUrl = buildApiUrl(currencies[0].equals("UZS") ? currencies[1] : currencies[0], date);
+            String apiUrl = buildApiUrl(UZS.equals(currencies[0]) ? currencies[1] : currencies[0], date);
             HttpClient httpClient = HttpClient.newHttpClient();
             HttpRequest request = HttpRequest.newBuilder().uri(URI.create(apiUrl)).GET().build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
-            if (response.statusCode() != 200)
-                throw new OfficialRateFetchException("Failed to fetch official exchange rate. HTTP Status Code: " + response.statusCode());
+            if (response.statusCode() != 200) {
+                throw new OfficialRateFetchException("Failed to fetch official exchange rate");
+            }
 
-            Gson gson = new Gson();
-            Type currencyListType = new TypeToken<List<CurrencyDTO>>() {
-            }.getType();
-            List<CurrencyDTO> currenciesList = gson.fromJson(response.body(), currencyListType);
+            String rate = getRateFromResponse(response, currencies);
 
-            String rateString = getRateForCurrencyPair(currencies[0], currencies[1], currenciesList);
-            double rateDouble = Double.parseDouble(rateString);
-            BigDecimal rate = BigDecimal.valueOf(rateDouble);
-
-            return new RateDTO(currencies[0], currencies[1], rate, LocalDate.parse(date));
+            return createRateDTO(currencies[0], currencies[1], date, Double.parseDouble(rate));
 
         } catch (IOException | InterruptedException | OfficialRateFetchException e) {
-            throw new OfficialRateFetchException("Failed to fetch official exchange rate.");
+            Thread.currentThread().interrupt();
+            throw new OfficialRateFetchException("Failed to fetch official exchange rate");
         }
     }
 
     @Override
-    public ConversionDTO performConversion(ConversionDTO conversionDTO) {
-        Optional<Account> fromAccountOptional = accountRepository.getAccountByCurrencyName(conversionDTO.from());
-        Optional<Account> toAccountOptional = accountRepository.getAccountByCurrencyName(conversionDTO.to());
+    public ConversionDTO performConversion(ConversionDTO dto) {
+        Account fromAccount = getAccountOrThrow(dto.from());
+        Account toAccount = getAccountOrThrow(dto.to());
 
-        if (fromAccountOptional.isEmpty())
-            throw new NotFoundException("From account does not exists!");
+        if (UZS.equals(dto.from()) || UZS.equals(dto.to())) {
 
-        if (toAccountOptional.isEmpty())
-            throw new NotFoundException("To account does not exists!");
+            Commission commission = getCommission(dto.from(), dto.to());
+            BigDecimal moneyToTransfer = getMoneyToTransfer(dto.amount());
 
-        Account fromAccount = fromAccountOptional.get();
-        Account toAccount = toAccountOptional.get();
+            validateSufficientFunds(fromAccount, moneyToTransfer);
 
+            BigDecimal moneyToSendToReceiverAccount = calculateAmountOfMoneyToSendToReceiverAccount(moneyToTransfer, commission);
 
-        Commission commission = getCommission(conversionDTO.from(), conversionDTO.to());
+            updateAccountBalances(fromAccount, toAccount, moneyToTransfer, moneyToSendToReceiverAccount);
 
-        double moneyToTransfer = conversionDTO.amount() * (100 - commission.getCommissionAmount()) / 100;
-        log.info(String.valueOf(moneyToTransfer));
+            String convertedAmount = DECIMAL_FORMATTER.format(moneyToSendToReceiverAccount);
+            return new ConversionDTO(dto.from(), dto.to(), convertedAmount);
 
-        if (fromAccount.getAmount() >= moneyToTransfer) {
-
-            fromAccount.setAmount(fromAccount.getAmount() - moneyToTransfer);
-            accountRepository.save(fromAccount);
-
-            double amountToAddToAccount = toAccount.getAmount() + (conversionDTO.amount() * commission.getConversionRate());
-            toAccount.setAmount(amountToAddToAccount);
-            accountRepository.save(toAccount);
-
-            return new ConversionDTO(conversionDTO.from(), conversionDTO.to(), amountToAddToAccount);
         } else {
-            // Throw an exception or handle the insufficient funds scenario as needed
-            // throw new InsufficientFundsException("Insufficient funds in the account for conversion.");
-            log.warn("NOt found");
-            return null;
+            Commission commission1 = getCommission(dto.from(), UZS);
+            Commission commission2 = getCommission(UZS, dto.to());
+
+            BigDecimal moneyToTransfer = getMoneyToTransfer(dto.amount());
+
+            validateSufficientFunds(fromAccount, moneyToTransfer);
+
+            BigDecimal moneyToSendToUzsAccount = calculateAmountOfMoneyToSendToReceiverAccount(moneyToTransfer, commission1);
+            BigDecimal moneyToSendToReceiverAccount = calculateAmountOfMoneyToSendToReceiverAccount(moneyToSendToUzsAccount, commission2);
+
+            updateAccountBalances(fromAccount, toAccount, moneyToTransfer, moneyToSendToReceiverAccount);
+
+
+            String convertedAmount = DECIMAL_FORMATTER.format(moneyToSendToReceiverAccount);
+            return new ConversionDTO(dto.from(), dto.to(), convertedAmount);
+
+        }
+
+    }
+
+    private void updateAccountBalances(Account fromAccount, Account toAccount, BigDecimal moneyToTransfer, BigDecimal moneyToSendToReceiverAccount) {
+        fromAccount.setAmount(fromAccount.getAmount().subtract(moneyToTransfer));
+        toAccount.setAmount(toAccount.getAmount().add(moneyToSendToReceiverAccount));
+
+        accountRepository.saveAll(List.of(fromAccount, toAccount));
+    }
+
+    private void validateSufficientFunds(Account fromAccount, BigDecimal moneyToTransfer) {
+        if (fromAccount.getAmount().doubleValue() < moneyToTransfer.doubleValue()) {
+            throw new NotEnoughMoneyException("Not enough money in account. ");
         }
     }
 
-    private Commission getCommission(String from, String to) {
-        return commissionRepository.getCommissionByFromCurrencyAndToCurrency(from, to).orElseThrow(() -> new NotFoundException("Commission not found for the specified currencies"));
+    private BigDecimal getMoneyToTransfer(String amount) {
+        return BigDecimal.valueOf(Double.parseDouble(amount));
     }
 
-    @Override
-    public CommissionDTO setCommission(String secretKey, CommissionDTO commissionDTO) {
-        if (!secretKey.equals(securityKeyRepository.getSecretKey()))
-            throw new SecurityException("Security key is not equal!");
+    private Account getAccountOrThrow(String currency) {
+        return accountRepository.findByCurrencyName(currency)
+                .orElseThrow(() -> new NotFoundException("Account not found!"));
+    }
 
-        Optional<Commission> commissionOptional = commissionRepository.getCommissionByFromCurrencyAndToCurrency(commissionDTO.from(), commissionDTO.to());
-        if (commissionOptional.isEmpty())
-            throw new NotFoundException("This pair does not exist!");
+    private String getRateFromResponse(HttpResponse<String> response, String[] currencies) {
+        Gson gson = new Gson();
+        Type currencyListType = new TypeToken<List<CurrencyDTO>>() {
+        }.getType();
+        List<CurrencyDTO> currenciesList = gson.fromJson(response.body(), currencyListType);
 
-        Commission commission = commissionOptional.get();
-        commission.setCommissionAmount(commissionDTO.commissionAmount());
+        return calculateRateForCurrencyPair(currencies[0], currenciesList);
+    }
 
-        return commissionDTOMapper.apply(commissionRepository.save(commission));
+    private static BigDecimal calculateAmountOfMoneyToSendToReceiverAccount(BigDecimal moneyToTransfer, Commission commission) {
+        return BigDecimal.valueOf(moneyToTransfer.doubleValue() * commission.getConversionRate().doubleValue() * ((100 - commission.getCommissionAmount()) * 0.01));
+    }
+
+    private Double calculateCommission(Commission commission, Double amount) {
+        return (((100 - commission.getCommissionAmount()) * amount) / 100) * commission.getConversionRate().doubleValue();
     }
 
     private String buildApiUrl(String currency, String date) {
         return API_BASE_URL + currency + "/" + date + "/";
     }
 
-    private String getRateForCurrencyPair(String from, String to, List<CurrencyDTO> currenciesList) {
-
-        if (from.equals("UZS"))
+    private String calculateRateForCurrencyPair(String fromCurrency, List<CurrencyDTO> currenciesList) {
+        if (UZS.equals(fromCurrency)) {
             return DECIMAL_FORMATTER.format(BigDecimal.valueOf(1.0 / Double.parseDouble(currenciesList.get(0).Rate())));
-        else if (to.equals("UZS"))
+        } else {
             return DECIMAL_FORMATTER.format(BigDecimal.valueOf(Double.parseDouble(currenciesList.get(0).Rate())));
-        else
-            return DECIMAL_FORMATTER.format(BigDecimal.valueOf(Double.parseDouble(currenciesList.get(0).Rate())));
+        }
     }
 
-    private Double calculate(Commission commission, Double amount) {
-        return (((100 - commission.getCommissionAmount()) * amount) / 100) * commission.getConversionRate();
+    private RateDTO createRateDTO(String from, String to, String date, Double rate) {
+        return new RateDTO(from, to, DECIMAL_FORMATTER.format(BigDecimal.valueOf(rate)), LocalDate.parse(date));
+    }
+
+    public Commission getCommission(String from, String to) {
+        return commissionRepository.findByFromCurrencyAndToCurrency(from, to).
+                orElseThrow(() -> new NotFoundException("Commission not found for the specified currencies"));
     }
 }

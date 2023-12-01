@@ -10,7 +10,7 @@ import lombok.*;
 @AllArgsConstructor
 @EqualsAndHashCode
 @Table(name = "secret_key")
-public class SecurityKey {
+public class SecretKey {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;

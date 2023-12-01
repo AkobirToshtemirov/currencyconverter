@@ -4,7 +4,6 @@ spring:
     username: ${SPRING_DATASOURCE_USERNAME:postgres}
     password: ${SPRING_DATASOURCE_PASSWORD:dev3469}
 
-
   jpa:
     database-platform: org.hibernate.dialect.PostgreSQLDialect
     hibernate:
@@ -19,3 +18,8 @@ server:
 logging:
   level:
     root: info
+
+secret:
+  key:
+    file:
+      path: default-secret-key.txt

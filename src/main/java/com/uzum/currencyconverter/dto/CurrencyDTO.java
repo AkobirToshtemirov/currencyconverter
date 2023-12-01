@@ -1,7 +1,7 @@
 package com.uzum.currencyconverter.dto;
 
 public record CurrencyDTO(
-        int id,
+        Long id,
         String Code,
         String Ccy,
         String CcyNm_RU,

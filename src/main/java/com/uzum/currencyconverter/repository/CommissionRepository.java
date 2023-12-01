@@ -8,5 +8,5 @@ import java.util.Optional;
 
 @Repository
 public interface CommissionRepository extends JpaRepository<Commission, Long> {
-    Optional<Commission> getCommissionByFromCurrencyAndToCurrency(String fromCurrency, String toCurrency);
+    Optional<Commission> findByFromCurrencyAndToCurrency(String fromCurrency, String toCurrency);
 }
